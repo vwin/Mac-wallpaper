@@ -6,9 +6,9 @@
 
 ## 界面预览
 
-| 浏览与搜索 | 个性化设置 |
+| 浏览与搜索 | 我的收藏 |
 | --- | --- |
-| ![LumenWall 浏览、搜索和壁纸网格](docs/screenshots/browse.jpeg) | ![LumenWall 语言、外观和壁纸同步设置](docs/screenshots/settings.jpeg) |
+| ![LumenWall 浏览、搜索和壁纸网格](docs/screenshots/browse.jpeg) | ![LumenWall 收藏的壁纸](docs/screenshots/favorites.jpeg) |
 
 ## 现有功能
 
