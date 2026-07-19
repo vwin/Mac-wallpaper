@@ -194,7 +194,11 @@ private struct NativeSearchField: NSViewRepresentable {
 private struct AppLogo: View {
     let size: CGFloat
     var body: some View {
-        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+        // Do not use Bundle.module here. SwiftPM's generated Bundle.module accessor
+        // asserts when its companion resource bundle is absent after a PKG install,
+        // which turns a missing decorative image into an application-launch crash.
+        // AppIcon.png is copied into the app bundle's Resources directory.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                 .frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.23))
