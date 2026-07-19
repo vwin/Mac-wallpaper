@@ -4,6 +4,12 @@
 
 > 当前要求 macOS 14 或更高版本，推荐在 14 英寸 MacBook Pro（3024 × 1964 Retina）或 4K 显示器上使用。
 
+## 界面预览
+
+| 浏览与搜索 | 个性化设置 |
+| --- | --- |
+| ![LumenWall 浏览、搜索和壁纸网格](docs/screenshots/browse.jpeg) | ![LumenWall 语言、外观和壁纸同步设置](docs/screenshots/settings.jpeg) |
+
 ## 现有功能
 
 - 多来源搜索：可在“全部来源”、必应中国每日壁纸、360 壁纸（4K）、Wallhaven、Wikimedia Commons 之间切换，也可聚合搜索。
@@ -64,12 +70,12 @@ swift test
 
 ## 打包为安装包（PKG）
 
-仓库的 `dist/` 目录中保留最新生成的安装包。以下示例从当前构建生成一个本地可安装的 PKG；请先在 `AppBundle/Info.plist` 中更新版本号和构建号。
+每个正式安装包会作为 GitHub Release 附件发布。以下示例从当前构建生成一个本地可安装的 PKG；请先在 `AppBundle/Info.plist` 中更新版本号和构建号。
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
 
-VERSION=0.1.17
+VERSION=0.1.20
 STAGING=dist/InstallerRoot
 APP="$STAGING/Applications/LumenWall.app"
 
@@ -118,10 +124,3 @@ AppBundle/                          应用与安装包元数据
 Resources/                          应用图标资源
 Tests/                              核心逻辑测试
 ```
-
-## 后续方向
-
-- 动态壁纸（HEIC / 视频）与节能策略
-- 下载任务进度、磁盘配额与本地图库管理
-- 桌面 Widget 与每日精选
-- Developer ID 签名、公证与 Mac App Store 发布适配
