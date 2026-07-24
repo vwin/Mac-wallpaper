@@ -7,6 +7,9 @@ final class WallpaperManager: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var isApplying = false
     @Published private(set) var currentWallpaper: Wallpaper?
+    /// Complete wallpaper records are retained separately from file paths so the
+    /// Downloads page remains useful after a network search cache expires.
+    @Published private(set) var downloadedWallpapers: [Wallpaper] = []
     @Published var applyToAllDisplays: Bool {
         didSet { UserDefaults.standard.set(applyToAllDisplays, forKey: applyToAllDisplaysKey) }
     }
@@ -17,6 +20,7 @@ final class WallpaperManager: ObservableObject {
     private let directoryKey = "wallpaperDownloadDirectory"
     private let downloadedFilesKey = "downloadedWallpaperFiles"
     private let downloadedBookmarksKey = "downloadedWallpaperBookmarks"
+    private let downloadedWallpaperRecordsKey = "downloadedWallpaperRecords.v1"
     private let applyToAllDisplaysKey = "applyWallpaperToAllDisplays"
     private let applyToAllSpacesKey = "applyWallpaperToAllSpaces"
     private let syncedWallpaperBookmarkKey = "syncedWallpaperBookmark"
@@ -36,6 +40,7 @@ final class WallpaperManager: ObservableObject {
         currentWallpaper = UserDefaults.standard.data(forKey: currentWallpaperKey)
             .flatMap { try? JSONDecoder().decode(Wallpaper.self, from: $0) }
         repairLegacyDownloadFileNames()
+        reloadDownloadedWallpapers()
         activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: NSWorkspace.shared,
@@ -53,6 +58,28 @@ final class WallpaperManager: ObservableObject {
     }
 
     func isDownloaded(_ wallpaper: Wallpaper) -> Bool { downloadedFile(for: wallpaper) != nil }
+
+    /// Moves the downloaded file to the macOS Trash and removes every local index
+    /// pointing to it. Favorites intentionally stay untouched.
+    @discardableResult
+    func removeDownloadedWallpaper(_ wallpaper: Wallpaper) -> Bool {
+        let fileURL = downloadedFile(for: wallpaper, registerRecord: false)
+        guard let fileURL else {
+            removeDownloadedRecord(wallpaper)
+            statusMessage = "本地文件已不存在，已移除下载记录"
+            return true
+        }
+        do {
+            try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+            removeDownloadIndexes(for: wallpaper, fileURL: fileURL)
+            removeDownloadedRecord(wallpaper)
+            statusMessage = "已将“\(wallpaper.title)”移入废纸篓"
+            return true
+        } catch {
+            statusMessage = "删除失败：\(error.localizedDescription)"
+            return false
+        }
+    }
 
     func setRotationStatus(_ message: String) { statusMessage = message }
 
@@ -97,6 +124,7 @@ final class WallpaperManager: ObservableObject {
             let destination = availableFileURL(for: wallpaper)
             try FileManager.default.moveItem(at: temporaryURL, to: destination)
             try saveDownloadedFile(destination, for: wallpaper)
+            registerDownloadedWallpaper(wallpaper)
             let applied = try await setDesktopImage(destination)
             rememberCurrentWallpaper(wallpaper)
             statusMessage = "已设为 \(applied) 个显示器的壁纸，并保存到 \(downloadDirectory.lastPathComponent)"
@@ -168,19 +196,22 @@ final class WallpaperManager: ObservableObject {
         }
     }
 
-    private func downloadedFile(for wallpaper: Wallpaper) -> URL? {
+    private func downloadedFile(for wallpaper: Wallpaper, registerRecord: Bool = true) -> URL? {
         let bookmarks = UserDefaults.standard.dictionary(forKey: downloadedBookmarksKey) ?? [:]
         if let bookmark = bookmarks[wallpaper.persistentKey] as? Data {
             var stale = false
             if let url = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale),
                FileManager.default.fileExists(atPath: url.path) {
                 if stale { try? saveDownloadedFile(url, for: wallpaper) }
+                if registerRecord { registerDownloadedWallpaper(wallpaper) }
                 return url
             }
         }
         let files = UserDefaults.standard.dictionary(forKey: downloadedFilesKey) as? [String: String] ?? [:]
         if let path = files[wallpaper.persistentKey] ?? files[String(wallpaper.id)], FileManager.default.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: path)
+            if registerRecord { registerDownloadedWallpaper(wallpaper) }
+            return url
         }
         return nil
     }
@@ -193,6 +224,123 @@ final class WallpaperManager: ObservableObject {
         var bookmarks = UserDefaults.standard.dictionary(forKey: downloadedBookmarksKey) ?? [:]
         bookmarks[wallpaper.persistentKey] = bookmark
         UserDefaults.standard.set(bookmarks, forKey: downloadedBookmarksKey)
+    }
+
+    private func reloadDownloadedWallpapers() {
+        let saved = (UserDefaults.standard.data(forKey: downloadedWallpaperRecordsKey))
+            .flatMap { try? JSONDecoder().decode([Wallpaper].self, from: $0) } ?? []
+        var knownPaths = Set<String>()
+        var knownKeys = Set<String>()
+        var restored: [Wallpaper] = []
+
+        for wallpaper in saved {
+            guard let file = downloadedFile(for: wallpaper, registerRecord: false),
+                  knownPaths.insert(file.standardizedFileURL.path).inserted,
+                  knownKeys.insert(wallpaper.persistentKey).inserted else { continue }
+            restored.append(wallpaperWithLocalDimensions(wallpaper, fileURL: file))
+        }
+
+        // Builds before v0.1.22 retained only a file index. Preserve those old
+        // downloads as local records rather than making them disappear from the
+        // new Downloads page.
+        let indexedPaths = UserDefaults.standard.dictionary(forKey: downloadedFilesKey) as? [String: String] ?? [:]
+        for path in Set(indexedPaths.values) {
+            let file = URL(fileURLWithPath: path)
+            guard FileManager.default.fileExists(atPath: file.path),
+                  knownPaths.insert(file.standardizedFileURL.path).inserted else { continue }
+            let local = localWallpaper(for: file)
+            restored.append(local)
+            try? saveDownloadedFile(file, for: local)
+        }
+        downloadedWallpapers = restored
+        persistDownloadedWallpapers()
+    }
+
+    private func registerDownloadedWallpaper(_ wallpaper: Wallpaper) {
+        guard downloadedFile(for: wallpaper, registerRecord: false) != nil,
+              !downloadedWallpapers.contains(where: { $0.persistentKey == wallpaper.persistentKey }) else { return }
+        downloadedWallpapers.insert(wallpaper, at: 0)
+        persistDownloadedWallpapers()
+    }
+
+    private func removeDownloadedRecord(_ wallpaper: Wallpaper) {
+        downloadedWallpapers.removeAll { $0.persistentKey == wallpaper.persistentKey }
+        persistDownloadedWallpapers()
+    }
+
+    private func persistDownloadedWallpapers() {
+        guard let data = try? JSONEncoder().encode(downloadedWallpapers) else { return }
+        UserDefaults.standard.set(data, forKey: downloadedWallpaperRecordsKey)
+    }
+
+    private func removeDownloadIndexes(for wallpaper: Wallpaper, fileURL: URL) {
+        let path = fileURL.standardizedFileURL.path
+        var files = UserDefaults.standard.dictionary(forKey: downloadedFilesKey) as? [String: String] ?? [:]
+        files = files.filter { key, value in
+            key != wallpaper.persistentKey && URL(fileURLWithPath: value).standardizedFileURL.path != path
+        }
+        UserDefaults.standard.set(files, forKey: downloadedFilesKey)
+
+        var bookmarks = UserDefaults.standard.dictionary(forKey: downloadedBookmarksKey) ?? [:]
+        bookmarks = bookmarks.filter { key, value in
+            guard key != wallpaper.persistentKey else { return false }
+            guard let data = value as? Data else { return true }
+            var stale = false
+            let indexed = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+            return indexed?.standardizedFileURL.path != path
+        }
+        UserDefaults.standard.set(bookmarks, forKey: downloadedBookmarksKey)
+    }
+
+    private func localWallpaper(for fileURL: URL) -> Wallpaper {
+        let name = fileURL.deletingPathExtension().lastPathComponent
+        let size = imagePixelSize(at: fileURL)
+        return Wallpaper(
+            id: stableLocalID(for: fileURL.path),
+            title: name.isEmpty ? "LumenWall" : name,
+            creator: "Local",
+            license: "Downloaded with LumenWall",
+            sourcePage: fileURL,
+            previewURL: fileURL,
+            fullURL: fileURL,
+            width: size.width,
+            height: size.height,
+            kind: .staticImage,
+            source: .all
+        )
+    }
+
+    private func wallpaperWithLocalDimensions(_ wallpaper: Wallpaper, fileURL: URL) -> Wallpaper {
+        guard wallpaper.width <= 0 || wallpaper.height <= 0 else { return wallpaper }
+        let size = imagePixelSize(at: fileURL)
+        guard size.width > 0, size.height > 0 else { return wallpaper }
+        return Wallpaper(
+            id: wallpaper.id,
+            title: wallpaper.title,
+            creator: wallpaper.creator,
+            license: wallpaper.license,
+            sourcePage: wallpaper.sourcePage,
+            previewURL: wallpaper.previewURL,
+            fullURL: wallpaper.fullURL,
+            width: size.width,
+            height: size.height,
+            kind: wallpaper.kind,
+            source: wallpaper.source
+        )
+    }
+
+    private func imagePixelSize(at fileURL: URL) -> (width: Int, height: Int) {
+        guard let image = NSImage(contentsOf: fileURL) else { return (0, 0) }
+        let representation = image.representations.max { lhs, rhs in
+            lhs.pixelsWide * lhs.pixelsHigh < rhs.pixelsWide * rhs.pixelsHigh
+        }
+        return (representation?.pixelsWide ?? 0, representation?.pixelsHigh ?? 0)
+    }
+
+    private func stableLocalID(for value: String) -> Int {
+        var hash: UInt64 = 1_469_598_103_934_665_603
+        for byte in value.utf8 { hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211 }
+        return Int(truncatingIfNeeded: hash)
     }
 
     private func availableFileURL(for wallpaper: Wallpaper) -> URL {
