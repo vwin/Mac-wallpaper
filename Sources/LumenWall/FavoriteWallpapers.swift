@@ -20,6 +20,16 @@ final class FavoriteWallpapers: ObservableObject {
         wallpapers.contains { $0.persistentKey == wallpaper.persistentKey }
     }
 
+    /// Adds a wallpaper without turning an existing favourite back off. This is
+    /// used by the menu-bar shortcut, where "favourite" must be idempotent.
+    @discardableResult
+    func add(_ wallpaper: Wallpaper) -> Bool {
+        guard !contains(wallpaper) else { return false }
+        wallpapers.insert(wallpaper, at: 0)
+        persist()
+        return true
+    }
+
     func toggle(_ wallpaper: Wallpaper) {
         if let index = wallpapers.firstIndex(where: { $0.persistentKey == wallpaper.persistentKey }) {
             wallpapers.remove(at: index)

@@ -1,4 +1,4 @@
 .build/
-.build-release-*/
+.build-*/
 dist/InstallerRoot-*/
 .DS_Store
