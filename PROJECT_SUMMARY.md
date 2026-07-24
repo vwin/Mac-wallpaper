@@ -6,11 +6,11 @@
 | --- | --- |
 | 名称 | LumenWall |
 | 类型 | 原生 SwiftUI macOS 静态壁纸应用 |
-| 当前版本 | 0.1.21 |
+| 当前版本 | 0.1.22 |
 | 最低系统版本 | macOS 14 |
 | 技术栈 | Swift 6、SwiftUI、AppKit、Swift Package Manager |
 | 仓库 | https://github.com/vwin/Mac-wallpaper |
-| 最新发布 | https://github.com/vwin/Mac-wallpaper/releases/tag/v0.1.21 |
+| 最新发布 | https://github.com/vwin/Mac-wallpaper/releases/latest |
 
 ## 产品能力
 
@@ -19,6 +19,7 @@
 - 本地缓存与分页：优先读取缓存，并支持持续下滑加载更多结果。
 - 壁纸操作：预览、下载、选择默认下载目录、设置主显示器或全部已连接显示器。
 - 收藏：预览页点亮爱心收藏，左侧“收藏”页浏览本地收藏。
+- 已下载：左侧“已下载”页集中浏览本地壁纸；可将不需要的图片移入废纸篓，下载记录会同步清理。
 - 定时随机更换：可多选图片来源，支持 30 分钟、1 小时、2 小时或自定义 30–1440 分钟。
 - 虚拟桌面与菜单栏：支持在切换 Spaces 时重新应用当前壁纸；关闭窗口后仍可通过菜单栏收藏当前 LumenWall 壁纸、随机换图与调整定时任务。
 - 国际化与外观：简体中文/English，以及跟随系统、浅色、深色模式。
@@ -42,7 +43,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 
-- 正式安装包以 GitHub Release 附件形式发布；当前包为 `LumenWall-0.1.21-installer.pkg`。
+- 正式安装包以 GitHub Release 附件形式发布；当前包为 `LumenWall-0.1.22-installer.pkg`。
 - 打包前必须使用独立、干净的构建目录，禁止复用未知来源的旧 `.build` 产物。
 - 完整的构建、回归、提交与发布约束见根目录 [AGENTS.md](AGENTS.md)。
 

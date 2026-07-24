@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var searchQuery = ""
     @State private var showingFavorites = false
+    @State private var showingDownloads = false
+    @State private var wallpaperPendingDeletion: Wallpaper?
 
     var body: some View {
         ZStack {
@@ -30,6 +32,22 @@ struct ContentView: View {
         }
         .sheet(item: $selection) { WallpaperDetail(wallpaper: $0) }
         .sheet(isPresented: $showingSettings) { DownloadSettings() }
+        .alert(
+            t("从已下载中删除？", "Remove downloaded wallpaper?"),
+            isPresented: Binding(
+                get: { wallpaperPendingDeletion != nil },
+                set: { if !$0 { wallpaperPendingDeletion = nil } }
+            ),
+            presenting: wallpaperPendingDeletion
+        ) { wallpaper in
+            Button(t("删除", "Delete"), role: .destructive) {
+                wallpaperManager.removeDownloadedWallpaper(wallpaper)
+                wallpaperPendingDeletion = nil
+            }
+            Button(t("取消", "Cancel"), role: .cancel) { wallpaperPendingDeletion = nil }
+        } message: { wallpaper in
+            Text(t("“\(wallpaper.title)”将移入废纸篓，不会删除你的收藏记录。", "\"\(wallpaper.title)\" will be moved to the Trash. Your favorite record will remain."))
+        }
     }
 
     private var sidebar: some View {
@@ -37,15 +55,21 @@ struct ContentView: View {
             HStack(spacing: 10) { AppLogo(size: 28); Text("LumenWall").font(.title3.weight(.bold)) }
             Text(t("探索", "Explore")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(WallpaperKind.allCases.filter { $0 != .dynamic }) { kind in
-                Button { showingFavorites = false; catalog.selectedKind = kind } label: { Label(kind.displayName(for: appSettings.language), systemImage: kind == .dynamic ? "livephoto" : kind == .staticImage ? "photo" : "square.grid.2x2")
+                Button { showingFavorites = false; showingDownloads = false; catalog.selectedKind = kind } label: { Label(kind.displayName(for: appSettings.language), systemImage: kind == .dynamic ? "livephoto" : kind == .staticImage ? "photo" : "square.grid.2x2")
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8).padding(.horizontal, 10)
-                    .background(!showingFavorites && catalog.selectedKind == kind ? Color.cyan.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8)) }
+                    .background(!showingFavorites && !showingDownloads && catalog.selectedKind == kind ? Color.cyan.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8)) }
                 .buttonStyle(.plain)
             }
-            Button { showingFavorites = true } label: {
+            Button { showingFavorites = true; showingDownloads = false } label: {
                 Label(t("收藏", "Favorites"), systemImage: "heart.fill")
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8).padding(.horizontal, 10)
                     .background(showingFavorites ? Color.cyan.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            Button { showingFavorites = false; showingDownloads = true } label: {
+                Label(t("已下载", "Downloads"), systemImage: "arrow.down.circle")
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8).padding(.horizontal, 10)
+                    .background(showingDownloads ? Color.cyan.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
             Spacer()
@@ -63,8 +87,8 @@ struct ContentView: View {
 
     private var main: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { VStack(alignment: .leading, spacing: 5) { Text(showingFavorites ? t("我的收藏", "My favorites") : t("今日灵感", "Today's inspiration")).font(.system(size: 28, weight: .bold)); Text(showingFavorites ? t("你收藏的壁纸会保存在这台 Mac 上", "Wallpapers you love, saved on this Mac") : t("为你的桌面挑一张足够清晰的壁纸", "Find a crisp wallpaper for your desktop")).foregroundStyle(.secondary) }; Spacer(); if !showingFavorites { Button { performSearch() } label: { Label(t("更新", "Refresh"), systemImage: "arrow.clockwise") }.buttonStyle(.bordered) } }
-            if !showingFavorites { HStack(spacing: 12) {
+            HStack { VStack(alignment: .leading, spacing: 5) { Text(pageTitle).font(.system(size: 28, weight: .bold)); Text(pageSubtitle).foregroundStyle(.secondary) }; Spacer(); if !showingFavorites && !showingDownloads { Button { performSearch() } label: { Label(t("更新", "Refresh"), systemImage: "arrow.clockwise") }.buttonStyle(.bordered) } }
+            if !showingFavorites && !showingDownloads { HStack(spacing: 12) {
                 HStack(spacing: 6) {
                     NativeSearchField(text: $searchQuery, placeholder: t("搜索自然、城市、太空…", "Search nature, cities, space…"), onSubmit: performSearch)
                         .frame(minWidth: 220, idealWidth: 380, maxWidth: .infinity)
@@ -80,7 +104,7 @@ struct ContentView: View {
                 Toggle(t("仅 4K+", "4K+ only"), isOn: $catalog.only4K).toggleStyle(.button).fixedSize()
                 Menu { Button("MacBook Pro 14\"") { catalog.display = .macBook14 }; Button(t("4K 显示器", "4K display")) { catalog.display = .init(width: 3840, height: 2160, scale: 1) } } label: { Label(catalog.display.label, systemImage: "display") }.buttonStyle(.bordered).fixedSize()
             } }
-            if !showingFavorites && catalog.isLoading {
+            if !showingFavorites && !showingDownloads && catalog.isLoading {
                 VStack(spacing: 14) {
                     ProgressView().controlSize(.large).tint(.cyan)
                     Text(t("正在搜索", "Searching") + " \(catalog.selectedSource.displayName(for: appSettings.language))…").font(.headline)
@@ -88,12 +112,12 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            else if !showingFavorites, let error = catalog.errorMessage {
+            else if !showingFavorites && !showingDownloads, let error = catalog.errorMessage {
                 ContentUnavailableView(t("暂时无法获取壁纸", "Wallpapers unavailable"), systemImage: "wifi.exclamationmark", description: Text(error))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
             else if displayedWallpapers.isEmpty {
-                ContentUnavailableView(showingFavorites ? t("还没有收藏壁纸", "No favorites yet") : t("没有匹配的壁纸", "No matching wallpapers"), systemImage: showingFavorites ? "heart" : "photo.on.rectangle.angled", description: Text(showingFavorites ? t("在壁纸预览中点亮爱心，它会出现在这里。", "Open a wallpaper preview and tap the heart to save it here.") : t("换一个关键词或关闭 4K 筛选。", "Try another keyword or turn off the 4K filter.")))
+                ContentUnavailableView(emptyStateTitle, systemImage: emptyStateIcon, description: Text(emptyStateDescription))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
             else {
@@ -101,12 +125,18 @@ struct ContentView: View {
                     ScrollView {
                         LazyVGrid(columns: wallpaperColumns(for: geometry.size.width), alignment: .leading, spacing: 18) {
                             ForEach(displayedWallpapers) { wallpaper in
-                                WallpaperCard(wallpaper: wallpaper)
+                                WallpaperCard(
+                                    wallpaper: wallpaper,
+                                    onDelete: showingDownloads ? { wallpaperPendingDeletion = wallpaper } : nil
+                                )
                                     .frame(minWidth: 0, maxWidth: .infinity)
                                     .onTapGesture { selection = wallpaper }
-                                    .onAppear { Task { await catalog.loadMoreIfNeeded(for: wallpaper) } }
+                                    .onAppear {
+                                        guard !showingFavorites && !showingDownloads else { return }
+                                        Task { await catalog.loadMoreIfNeeded(for: wallpaper) }
+                                    }
                             }
-                            if !showingFavorites && catalog.canLoadMore {
+                            if !showingFavorites && !showingDownloads && catalog.canLoadMore {
                                 HStack(spacing: 8) {
                                     if catalog.isLoadingMore { ProgressView().controlSize(.small) }
                                     Text(catalog.isLoadingMore ? t("正在加载更多壁纸…", "Loading more wallpapers…") : t("继续下滑，加载更多壁纸", "Scroll down to load more"))
@@ -146,7 +176,32 @@ struct ContentView: View {
     }
 
     private var displayedWallpapers: [Wallpaper] {
-        showingFavorites ? favoriteWallpapers.wallpapers : catalog.filteredWallpapers
+        if showingDownloads { return wallpaperManager.downloadedWallpapers }
+        return showingFavorites ? favoriteWallpapers.wallpapers : catalog.filteredWallpapers
+    }
+
+    private var pageTitle: String {
+        if showingDownloads { return t("已下载", "Downloads") }
+        return showingFavorites ? t("我的收藏", "My favorites") : t("今日灵感", "Today's inspiration")
+    }
+
+    private var pageSubtitle: String {
+        if showingDownloads { return t("已下载到这台 Mac 的壁纸", "Wallpapers downloaded to this Mac") }
+        return showingFavorites ? t("你收藏的壁纸会保存在这台 Mac 上", "Wallpapers you love, saved on this Mac") : t("为你的桌面挑一张足够清晰的壁纸", "Find a crisp wallpaper for your desktop")
+    }
+
+    private var emptyStateTitle: String {
+        if showingDownloads { return t("还没有下载壁纸", "No downloaded wallpapers") }
+        return showingFavorites ? t("还没有收藏壁纸", "No favorites yet") : t("没有匹配的壁纸", "No matching wallpapers")
+    }
+
+    private var emptyStateIcon: String {
+        showingDownloads ? "arrow.down.circle" : (showingFavorites ? "heart" : "photo.on.rectangle.angled")
+    }
+
+    private var emptyStateDescription: String {
+        if showingDownloads { return t("设置壁纸后，它会保存在这里。", "Wallpapers you set will appear here.") }
+        return showingFavorites ? t("在壁纸预览中点亮爱心，它会出现在这里。", "Open a wallpaper preview and tap the heart to save it here.") : t("换一个关键词或关闭 4K 筛选。", "Try another keyword or turn off the 4K filter.")
     }
 
     private func performSearch() {
@@ -212,6 +267,7 @@ private struct WallpaperCard: View {
     @EnvironmentObject private var wallpaperManager: WallpaperManager
     @EnvironmentObject private var appSettings: AppSettings
     let wallpaper: Wallpaper
+    var onDelete: (() -> Void)?
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             AsyncImage(url: wallpaper.previewURL) { phase in
@@ -253,9 +309,26 @@ private struct WallpaperCard: View {
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(alignment: .topTrailing) {
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.caption.weight(.semibold))
+                        .padding(8)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .padding(8)
+                .help(appSettings.text("从已下载中删除", "Remove from downloads"))
+            }
+        }
         .contextMenu {
             Button { Task { await wallpaperManager.apply(wallpaper) } } label: { Label(appSettings.text("下载 4K 优化版并设为壁纸", "Set as wallpaper"), systemImage: "desktopcomputer") }
             Button { NSWorkspace.shared.open(wallpaper.fullURL) } label: { Label(appSettings.text("下载原图", "Download original"), systemImage: "arrow.down.circle") }
+            if let onDelete {
+                Divider()
+                Button(role: .destructive, action: onDelete) { Label(appSettings.text("从已下载中删除", "Remove from downloads"), systemImage: "trash") }
+            }
         }
     }
 }
