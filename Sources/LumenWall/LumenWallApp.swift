@@ -5,6 +5,8 @@ import SwiftUI
 final class LumenWallAppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private weak var rotationManager: WallpaperRotationManager?
+    private weak var wallpaperManager: WallpaperManager?
+    private weak var favoriteWallpapers: FavoriteWallpapers?
     private weak var appSettings: AppSettings?
     private var openMainWindow: (() -> Void)?
 
@@ -19,8 +21,16 @@ final class LumenWallAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    func configure(rotationManager: WallpaperRotationManager, appSettings: AppSettings, openMainWindow: @escaping () -> Void) {
+    func configure(
+        rotationManager: WallpaperRotationManager,
+        wallpaperManager: WallpaperManager,
+        favoriteWallpapers: FavoriteWallpapers,
+        appSettings: AppSettings,
+        openMainWindow: @escaping () -> Void
+    ) {
         self.rotationManager = rotationManager
+        self.wallpaperManager = wallpaperManager
+        self.favoriteWallpapers = favoriteWallpapers
         self.appSettings = appSettings
         self.openMainWindow = openMainWindow
         rebuildStatusMenu()
@@ -34,6 +44,11 @@ final class LumenWallAppDelegate: NSObject, NSApplicationDelegate {
         random.image = NSImage(systemSymbolName: "shuffle", accessibilityDescription: nil)
         random.isEnabled = rotationManager?.isRotating != true
         menu.addItem(random)
+
+        let favorite = actionItem(favoriteCurrentWallpaperTitle, action: #selector(favoriteCurrentWallpaper))
+        favorite.image = NSImage(systemSymbolName: favoriteCurrentWallpaperImage, accessibilityDescription: nil)
+        favorite.isEnabled = canFavoriteCurrentWallpaper
+        menu.addItem(favorite)
 
         let sources = NSMenuItem(title: text("图片来源（已选 \(rotationManager?.selectedSourceCount ?? 0)）", "Image sources (\(rotationManager?.selectedSourceCount ?? 0) selected)"), action: nil, keyEquivalent: "")
         let sourceMenu = NSMenu()
@@ -87,6 +102,27 @@ final class LumenWallAppDelegate: NSObject, NSApplicationDelegate {
         appSettings?.text(chinese, english) ?? chinese
     }
 
+    private var canFavoriteCurrentWallpaper: Bool {
+        guard let wallpaper = wallpaperManager?.currentWallpaper else { return false }
+        return favoriteWallpapers?.contains(wallpaper) != true
+    }
+
+    private var favoriteCurrentWallpaperTitle: String {
+        guard let wallpaper = wallpaperManager?.currentWallpaper else {
+            return text("收藏当前壁纸（暂无）", "Favorite current wallpaper (unavailable)")
+        }
+        if favoriteWallpapers?.contains(wallpaper) == true {
+            return text("当前壁纸已收藏", "Current wallpaper is favorited")
+        }
+        return text("收藏当前壁纸", "Favorite current wallpaper")
+    }
+
+    private var favoriteCurrentWallpaperImage: String {
+        guard let wallpaper = wallpaperManager?.currentWallpaper,
+              favoriteWallpapers?.contains(wallpaper) == true else { return "heart" }
+        return "heart.fill"
+    }
+
     @objc private func showMainWindow() {
         openMainWindow?()
         NSApp.activate(ignoringOtherApps: true)
@@ -97,6 +133,21 @@ final class LumenWallAppDelegate: NSObject, NSApplicationDelegate {
             await self?.rotationManager?.rotateNow()
             self?.rebuildStatusMenu()
         }
+    }
+
+    @objc private func favoriteCurrentWallpaper() {
+        guard let wallpaper = wallpaperManager?.currentWallpaper else {
+            wallpaperManager?.setRotationStatus(text("暂无可收藏的 LumenWall 壁纸", "No LumenWall wallpaper is available to favorite"))
+            rebuildStatusMenu()
+            return
+        }
+        guard let favoriteWallpapers else { return }
+        if favoriteWallpapers.add(wallpaper) {
+            wallpaperManager?.setRotationStatus(text("已收藏当前壁纸", "Current wallpaper added to favorites"))
+        } else {
+            wallpaperManager?.setRotationStatus(text("当前壁纸已在收藏中", "Current wallpaper is already favorited"))
+        }
+        rebuildStatusMenu()
     }
 
     @objc private func toggleRotation() {
@@ -152,6 +203,8 @@ private struct MainWindowContent: View {
     let appDelegate: LumenWallAppDelegate
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var rotationManager: WallpaperRotationManager
+    @EnvironmentObject private var wallpaperManager: WallpaperManager
+    @EnvironmentObject private var favoriteWallpapers: FavoriteWallpapers
     @EnvironmentObject private var appSettings: AppSettings
 
     var body: some View {
@@ -159,6 +212,8 @@ private struct MainWindowContent: View {
             .onAppear {
                 appDelegate.configure(
                     rotationManager: rotationManager,
+                    wallpaperManager: wallpaperManager,
+                    favoriteWallpapers: favoriteWallpapers,
                     appSettings: appSettings,
                     openMainWindow: { openWindow(id: "main") }
                 )

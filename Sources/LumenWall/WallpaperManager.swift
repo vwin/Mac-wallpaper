@@ -6,6 +6,7 @@ final class WallpaperManager: ObservableObject {
     @Published private(set) var downloadDirectory: URL
     @Published private(set) var statusMessage: String?
     @Published private(set) var isApplying = false
+    @Published private(set) var currentWallpaper: Wallpaper?
     @Published var applyToAllDisplays: Bool {
         didSet { UserDefaults.standard.set(applyToAllDisplays, forKey: applyToAllDisplaysKey) }
     }
@@ -19,6 +20,7 @@ final class WallpaperManager: ObservableObject {
     private let applyToAllDisplaysKey = "applyWallpaperToAllDisplays"
     private let applyToAllSpacesKey = "applyWallpaperToAllSpaces"
     private let syncedWallpaperBookmarkKey = "syncedWallpaperBookmark"
+    private let currentWallpaperKey = "currentAppliedWallpaper.v1"
     private var activeSpaceObserver: NSObjectProtocol?
 
     init() {
@@ -31,6 +33,8 @@ final class WallpaperManager: ObservableObject {
         }
         applyToAllDisplays = UserDefaults.standard.object(forKey: applyToAllDisplaysKey) as? Bool ?? true
         applyToAllSpaces = UserDefaults.standard.object(forKey: applyToAllSpacesKey) as? Bool ?? true
+        currentWallpaper = UserDefaults.standard.data(forKey: currentWallpaperKey)
+            .flatMap { try? JSONDecoder().decode(Wallpaper.self, from: $0) }
         repairLegacyDownloadFileNames()
         activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
@@ -78,6 +82,7 @@ final class WallpaperManager: ObservableObject {
             if let existing = downloadedFile(for: wallpaper) {
                 statusMessage = "该壁纸已下载，正在直接设置…"
                 let applied = try await setDesktopImage(existing)
+                rememberCurrentWallpaper(wallpaper)
                 statusMessage = "已使用本地文件设为 \(applied) 个显示器的壁纸"
                 return true
             }
@@ -93,6 +98,7 @@ final class WallpaperManager: ObservableObject {
             try FileManager.default.moveItem(at: temporaryURL, to: destination)
             try saveDownloadedFile(destination, for: wallpaper)
             let applied = try await setDesktopImage(destination)
+            rememberCurrentWallpaper(wallpaper)
             statusMessage = "已设为 \(applied) 个显示器的壁纸，并保存到 \(downloadDirectory.lastPathComponent)"
             return true
         } catch {
@@ -117,6 +123,12 @@ final class WallpaperManager: ObservableObject {
             try rememberWallpaperForSpaces(fileURL)
         }
         return screens.count
+    }
+
+    private func rememberCurrentWallpaper(_ wallpaper: Wallpaper) {
+        currentWallpaper = wallpaper
+        guard let data = try? JSONEncoder().encode(wallpaper) else { return }
+        UserDefaults.standard.set(data, forKey: currentWallpaperKey)
     }
 
     private func confirmDesktopImage(_ fileURL: URL, for screen: NSScreen) async throws {
