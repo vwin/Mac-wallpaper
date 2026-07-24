@@ -10,7 +10,7 @@
 | 最低系统版本 | macOS 14 |
 | 技术栈 | Swift 6、SwiftUI、AppKit、Swift Package Manager |
 | 仓库 | https://github.com/vwin/Mac-wallpaper |
-| 最新发布 | 待发布：0.1.21 |
+| 最新发布 | https://github.com/vwin/Mac-wallpaper/releases/tag/v0.1.21 |
 
 ## 产品能力
 
