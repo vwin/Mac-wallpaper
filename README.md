@@ -102,6 +102,8 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 
 该流程采用临时本地签名，只适合个人测试。若要向外发布，请使用 Apple Developer 证书进行签名和公证；若要发布到 Mac App Store，还需要 App Sandbox、隐私说明、App Store Connect 元数据及审核准备。
 
+> 隐私构建要求：发布包应使用独立 release 构建目录并追加 `-Xswiftc -gnone`，以避免把本机源文件路径写进二进制；复制应用和资源时使用 `ditto --noextattr --norsrc`。上传前需解包检查，确认不包含 `/Users/`、私人邮箱或 `._*` 附加文件。
+
 ### 发布流程
 
 完成一个功能或修复后，LumenWall 会先进行独立构建、测试和本地验证，并将代码提交、推送到 GitHub。**不会自动创建 GitHub Release 或上传安装包**；需要等待使用者完成验证并明确确认后，才会创建对应 Release、上传已经验证的最新 PKG。

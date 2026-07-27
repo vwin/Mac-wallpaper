@@ -12,3 +12,5 @@
 - 运行 `swift test`，所有测试必须通过。
 - 启动最终将被打包的 `.app`，检查本次改动的界面/行为可用。
 - 校验 PKG 中应用的版本号、资源文件与签名，再上传 Release。
+- 发布包必须使用 `swift build -c release -Xswiftc -gnone` 关闭调试信息；打包资源时使用 `ditto --noextattr --norsrc`，不得携带 `._*` AppleDouble 文件。
+- 上传前解包审计 PKG，确认二进制与资源中不含本机绝对路径、用户名、私人邮箱或证书身份；ad-hoc 签名应显示 `TeamIdentifier=not set`。
